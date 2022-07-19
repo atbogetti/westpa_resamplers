@@ -1,2 +1,5 @@
 # Resampler 1
-This is the percent change resampler scaled by trajectory weights
+This resampler uses the percent change scaled by trajectory weights to determine splitting and merging.
+There are many adjustable parameters when using this resampler.
+
+This is an excellent example of how to implement your own resampler.
