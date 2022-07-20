@@ -2,6 +2,7 @@ import logging
 import math
 import operator
 import random
+import pandas as pd
 
 import numpy as np
 
@@ -14,11 +15,29 @@ log = logging.getLogger(__name__)
 
 class CustomDriver(WEDriver):
    
-    def _segment_index_converter(self, mode, pcoords, curr_pcoords, data):
+    def _segment_index_converter(self, mode, pcoords, curr_pcoords, curr_weights, data, target):
 
         if mode == "split":
-            to_split_idx = np.argsort(-data,axis=0)[:5]
+            to_split_list = np.argsort(-data,axis=0)
+            to_split_idx = []
+
+            # don't split out of bounds walkers
+            for idx in to_split_list:
+                if data[idx] != 0 and curr_pcoords[:,-1][idx] > target:
+                    to_split_idx.append(idx)
+                                                          
+            to_split_idx = to_split_idx[:5]
+
             curr_pcoords_to_split = curr_pcoords[:,-1][to_split_idx]
+
+            mydf_split = pd.DataFrame()
+            mydf_split['split index'] = to_split_idx
+            mydf_split['pcoords'] = curr_pcoords_to_split
+            mydf_split['weights'] = curr_weights[to_split_idx]
+            mydf_split['scaled progress'] = data[to_split_idx]
+
+            print("\n", mydf_split)
+
             if curr_pcoords_to_split.shape[0] > 1:
                 converted_idx = np.zeros(curr_pcoords_to_split.shape[0], dtype=int)
                 for idx, val in enumerate(curr_pcoords_to_split):
@@ -29,8 +48,26 @@ class CustomDriver(WEDriver):
             return converted_idx
 
         if mode == "merge":
-            to_merge_idx = np.argsort(data,axis=0)[:6]
+            to_merge_list = np.argsort(data,axis=0)
+            to_merge_idx = []
+
+            # don't merge out of bounds walkers
+            for idx in to_merge_list:
+                if data[idx] != 0 and curr_pcoords[:,-1][idx] > target:
+                    to_merge_idx.append(idx)
+
+            to_merge_idx = to_merge_idx[:6]
+                    
             curr_pcoords_to_merge = curr_pcoords[:,-1][to_merge_idx]
+
+            mydf_merge = pd.DataFrame()
+            mydf_merge['merge index'] = to_merge_idx
+            mydf_merge['pcoords'] = curr_pcoords_to_merge
+            mydf_merge['weights'] = curr_weights[to_merge_idx]
+            mydf_merge['scaled progress'] = data[to_merge_idx]
+
+            print("\n", mydf_merge)
+
             if curr_pcoords_to_merge.shape[0] > 1:
                 converted_idx = np.zeros(curr_pcoords_to_merge.shape[0], dtype=int)
                 for idx, val in enumerate(curr_pcoords_to_merge):
@@ -102,25 +139,35 @@ class CustomDriver(WEDriver):
                 curr_pcoords = curr_pcoords.reshape(nsegs,nframes)
 
                 # change the following for different algorithms
-                start = 20.0
+                start = 15.0
                 target = 2.6
-                rangep = np.abs(start-target)
                 
                 progresses = np.zeros((nsegs), dtype=float)
                 
                 # find percent change between first and last frame
                 for idx, ival in enumerate(curr_pcoords):
-                    progress = float(1-(ival[-1]/rangep))
+                    distance = np.abs(ival[-1]-target)/np.abs(start-target)
+                    if distance > 1:
+                        progress = 0
+                    else:
+                        progress = float(1-distance)
                     progresses[idx] = progress
 
-                progresses[progresses > 1] = 0
+                # this will prioritize trajectories with higher weights
+                scaled_progresses = progresses * (1/log_weights)
 
-                #scaled_progresses = progresses * log_weights
-                scaled_progresses = progresses * 1
+                # this is for if no weights are used
+                #scaled_progresses = progresses * 1
 
-                # sanity check
-                #print(curr_pcoords[:,-1], scaled_progresses)
-                
+                pd.set_option('display.colheader_justify', 'center')
+                mydf = pd.DataFrame()
+                mydf['pcoords'] = curr_pcoords[:,-1]
+                mydf['weights'] = curr_weights
+                mydf['adj weights'] = 1/log_weights
+                mydf['progress'] = progresses
+                mydf['scaled progress'] = scaled_progresses
+                print("\n", mydf)
+
                 # check if not initializing, then split and merge
                 init_check = curr_pcoords[:,0] != curr_pcoords[:,-1]
                 #print(init_check)
@@ -129,13 +176,13 @@ class CustomDriver(WEDriver):
 
                     # split walker with largest scaled diff
                     split_into = 2
-                    to_split_index = self._segment_index_converter("split", pcoords, curr_pcoords, scaled_progresses)
+                    to_split_index = self._segment_index_converter("split", pcoords, curr_pcoords, curr_weights, scaled_progresses, target)
                     to_split = np.array([segments[to_split_index]])[0]
 
                     self._split_by_data(bin, to_split, split_into)
     
                     # merge walker with lowest scaled diff into next lowest
-                    to_merge_index = self._segment_index_converter("merge", pcoords, curr_pcoords, scaled_progresses)
+                    to_merge_index = self._segment_index_converter("merge", pcoords, curr_pcoords, curr_weights, scaled_progresses, target)
                     to_merge = segments[to_merge_index]
 
                     self._merge_by_data(bin, to_merge)
