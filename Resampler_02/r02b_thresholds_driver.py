@@ -110,7 +110,7 @@ class CustomDriver(WEDriver):
                 init_check = curr_pcoords[:,0] != curr_pcoords[:,-1]
 
                 # set weight thresholds
-                lowest_abs_weight = 1e-12
+                smallest_abs_weight = 1e-12
                 largest_abs_weight = 1e-1
 
                 if np.any(init_check):
