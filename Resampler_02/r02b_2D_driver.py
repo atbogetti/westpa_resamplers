@@ -15,7 +15,6 @@ log = logging.getLogger(__name__)
 
 class CustomDriver(WEDriver):
    
-
     def _split_by_data(self, bin, to_split, split_into):
 
         if len(to_split) > 1:
@@ -52,62 +51,80 @@ class CustomDriver(WEDriver):
             else:
                 # this will just get you the final pcoord for each segment... which may not be enough
                 segments = np.array(sorted(bin, key=operator.attrgetter('weight')), dtype=np.object_)
-                pcoords = np.array(list(map(operator.attrgetter('pcoord'), segments)))[:,:,0]
+                pcoords_d1 = np.array(list(map(operator.attrgetter('pcoord'), segments)))[:,:,0]
+                pcoords_d2 = np.array(list(map(operator.attrgetter('pcoord'), segments)))[:,:,1]
                 weights = np.array(list(map(operator.attrgetter('weight'), segments)))
 
                 log_weights = -1 * np.log(weights)
  
-                nsegs = pcoords.shape[0]
-                nframes = pcoords.shape[1]
+                nsegs = pcoords_d1.shape[0]
+                nframes = pcoords_d1.shape[1]
 
-                pcoords = pcoords.reshape(nsegs,nframes)
+                pcoords_d1 = pcoords_d1.reshape(nsegs,nframes)
+                pcoords_d2 = pcoords_d2.reshape(nsegs,nframes)
 
                 # this will allow you to get the pcoords for all frames
+                # here we just use it to check if we are initializing
                 current_iter_segments = self.current_iter_segments
 
                 curr_segments = np.array(sorted(current_iter_segments, key=operator.attrgetter('weight')), dtype=np.object_)
-                curr_pcoords = np.array(list(map(operator.attrgetter('pcoord'), curr_segments)))[:,:,0]
+                curr_pcoords_d1 = np.array(list(map(operator.attrgetter('pcoord'), curr_segments)))[:,:,0]
                 curr_weights = np.array(list(map(operator.attrgetter('weight'), curr_segments)))
 
                 log_weights = -1 * np.log(weights)
  
-                nsegs = pcoords.shape[0]
-                nframes = pcoords.shape[1]
+                nsegs = pcoords_d1.shape[0]
+                nframes = pcoords_d1.shape[1]
                 
-                curr_pcoords = curr_pcoords.reshape(nsegs,nframes)
+                curr_pcoords_d1 = curr_pcoords_d1.reshape(nsegs,nframes)
 
                 # change the following for different algorithms
-                start = 0
-                target = 25
+                start_d1 = 0
+                target_d1 = 25
                 
-                progresses = np.zeros((nsegs), dtype=float)
+                start_d2 = 0
+                target_d2 = 10
+
+                progresses_d1 = np.zeros((nsegs), dtype=float)
+                progresses_d2 = np.zeros((nsegs), dtype=float)
                 
-                # find percent change between first and last frame
-                for idx, ival in enumerate(pcoords):
-                    distance = np.abs(ival[0]-target)/np.abs(start-target)
+                # find percent change between first and last frame for the first dimension
+                for idx, ival in enumerate(pcoords_d1):
+                    distance = np.abs(ival[0]-target_d1)/np.abs(start_d1-target_d1)
                     if distance > 1:
                         progress = 0
                     else:
                         progress = float(1-distance)
-                    progresses[idx] = progress
+                    progresses_d1[idx] = progress
+
+                # find percent change between first and last frame for the second dimension
+                for idx, ival in enumerate(pcoords_d2):
+                    distance = np.abs(ival[0]-target_d2)/np.abs(start_d2-target_d2)
+                    if distance > 1:
+                        progress = 0
+                    else:
+                        progress = float(1-distance)
+                    progresses_d2[idx] = progress
 
                 # this will prioritize trajectories with higher weights
-                scaled_progresses = progresses * (1/log_weights)
+                scaled_progresses = progresses_d1 * progresses_d2 * (1/log_weights)
 
-                # this is for if no weights are used
+                # this is for if no weights are used, which is not recommended...
                 #scaled_progresses = progresses * 1
 
                 pd.set_option('display.colheader_justify', 'center')
                 mydf = pd.DataFrame()
-                mydf['pcoords'] = pcoords[:,0]
+                mydf['pcoords d1'] = pcoords_d1[:,0]
+                mydf['pcoords d2'] = pcoords_d2[:,0]
                 mydf['weights'] = weights
                 mydf['adj weights'] = 1/log_weights
-                mydf['progress'] = progresses
+                mydf['progress d1'] = progresses_d1
+                mydf['progress d2'] = progresses_d2
                 mydf['scaled progress'] = scaled_progresses
-                print("\n", mydf)
+                print("\n", mydf.sort_values(by=['scaled progress']))
 
                 # check if not initializing, then split and merge
-                init_check = curr_pcoords[:,0] != curr_pcoords[:,-1]
+                init_check = curr_pcoords_d1[:,0] != curr_pcoords_d1[:,-1]
 
                 if np.any(init_check):
 
@@ -119,16 +136,18 @@ class CustomDriver(WEDriver):
                                                                                             
                     # don't split out of bounds walkers
                     for idx in to_split_list:
-                        if scaled_progresses[idx] != 0 and pcoords[:,0][idx] < target:
+                        if scaled_progresses[idx] != 0 and pcoords_d1[:,0][idx] < target_d1 and pcoords_d2[:,0][idx] < target_d2:
                             to_split_idx.append(idx)
                                                                   
                     to_split_idx = to_split_idx[:5]
                                                                                             
-                    pcoords_to_split = pcoords[:,0][to_split_idx]
+                    pcoords_to_split_d1 = pcoords_d1[:,0][to_split_idx]
+                    pcoords_to_split_d2 = pcoords_d2[:,0][to_split_idx]
                                                                                             
                     mydf_split = pd.DataFrame()
                     mydf_split['split index'] = to_split_idx
-                    mydf_split['pcoords'] = pcoords_to_split
+                    mydf_split['pcoords d1'] = pcoords_to_split_d1
+                    mydf_split['pcoords d2'] = pcoords_to_split_d2
                     mydf_split['weights'] = weights[to_split_idx]
                     mydf_split['scaled progress'] = scaled_progresses[to_split_idx]
                                                                                             
@@ -145,20 +164,22 @@ class CustomDriver(WEDriver):
                                                                                             
                     # don't merge out of bounds walkers
                     for idx in to_merge_list:
-                        if scaled_progresses[idx] != 0 and pcoords[:,0][idx] < target:
+                        if scaled_progresses[idx] != 0 and pcoords_d1[:,0][idx] < target_d1 and pcoords_d2[:,0][idx] < target_d2:
                             to_merge_idx.append(idx)
                                                                                             
                     to_merge_idx = to_merge_idx[:6]
                             
-                    pcoords_to_merge = pcoords[:,0][to_merge_idx]
+                    pcoords_to_merge_d1 = pcoords_d1[:,0][to_merge_idx]
+                    pcoords_to_merge_d2 = pcoords_d2[:,0][to_merge_idx]
                                                                                             
                     mydf_merge = pd.DataFrame()
                     mydf_merge['merge index'] = to_merge_idx
-                    mydf_merge['pcoords'] = pcoords_to_merge
+                    mydf_merge['pcoords d1'] = pcoords_to_merge_d1
+                    mydf_merge['pcoords d2'] = pcoords_to_merge_d2
                     mydf_merge['weights'] = weights[to_merge_idx]
                     mydf_merge['scaled progress'] = scaled_progresses[to_merge_idx]
                                                                                             
-                    print("\n", mydf.sort_values(by=['scaled progress']))
+                    print("\n", mydf_merge)
 
                     to_merge = segments[to_merge_idx]
 

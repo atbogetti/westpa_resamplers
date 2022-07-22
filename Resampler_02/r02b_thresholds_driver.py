@@ -109,6 +109,10 @@ class CustomDriver(WEDriver):
                 # check if not initializing, then split and merge
                 init_check = curr_pcoords[:,0] != curr_pcoords[:,-1]
 
+                # set weight thresholds
+                lowest_abs_weight = 1e-12
+                largest_abs_weight = 1e-1
+
                 if np.any(init_check):
 
                     # split walker with largest scaled diff
@@ -119,7 +123,7 @@ class CustomDriver(WEDriver):
                                                                                             
                     # don't split out of bounds walkers
                     for idx in to_split_list:
-                        if scaled_progresses[idx] != 0 and pcoords[:,0][idx] < target:
+                        if scaled_progresses[idx] != 0 and pcoords[:,0][idx] < target and smallest_abs_weight < weights[idx] < largest_abs_weight:
                             to_split_idx.append(idx)
                                                                   
                     to_split_idx = to_split_idx[:5]
@@ -145,7 +149,7 @@ class CustomDriver(WEDriver):
                                                                                             
                     # don't merge out of bounds walkers
                     for idx in to_merge_list:
-                        if scaled_progresses[idx] != 0 and pcoords[:,0][idx] < target:
+                        if scaled_progresses[idx] != 0 and pcoords[:,0][idx] < target and smallest_abs_weight < weights[idx] < largest_abs_weight:
                             to_merge_idx.append(idx)
                                                                                             
                     to_merge_idx = to_merge_idx[:6]
@@ -158,7 +162,7 @@ class CustomDriver(WEDriver):
                     mydf_merge['weights'] = weights[to_merge_idx]
                     mydf_merge['scaled progress'] = scaled_progresses[to_merge_idx]
                                                                                             
-                    print("\n", mydf.sort_values(by=['scaled progress']))
+                    print("\n", mydf_merge)
 
                     to_merge = segments[to_merge_idx]
 
